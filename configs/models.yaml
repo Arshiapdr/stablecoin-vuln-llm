@@ -1,0 +1,112 @@
+# Provider registry. Verified 2026-08-25.
+#
+# IMPORTANT (2026 landscape): Groq's free tier is capped at 8k tokens/minute and
+# llama-3.3-70b-versatile was removed on 2026-08-16, so Groq cannot serve a
+# 10-30k-token contract prompt on the free tier. It is kept here only for small
+# slices. Cerebras, Together and Hugging Face removed their free tiers in
+# 2025/2026. The defaults below reflect that.
+
+providers:
+
+  gemini:
+    kind: openai_compatible
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai/
+    api_key_env: GEMINI_API_KEY
+    signup: https://aistudio.google.com/apikey
+    default_model: gemini-2.5-flash
+    models: [gemini-2.5-flash, gemini-2.5-flash-lite, gemini-3.5-flash]
+    context_window: 1000000
+    free_tier: true
+    credit_card_required: false
+    rate_limit: {rpm: 10, rpd: 1500, tpm: 250000}
+    data_used_for_training: true      # free tier — must be disclosed in the thesis
+    notes: "Primary. 1M context; free tier prompts may be used for training."
+
+  mistral:
+    kind: openai_compatible
+    base_url: https://api.mistral.ai/v1
+    api_key_env: MISTRAL_API_KEY
+    signup: https://console.mistral.ai
+    default_model: mistral-large-latest
+    models: [mistral-large-latest, mistral-small-latest, codestral-latest]
+    context_window: 128000
+    free_tier: true
+    credit_card_required: false
+    rate_limit: {rps: 1, tpm: 500000, tokens_per_month: 1000000000}
+    data_used_for_training: true
+    notes: "Fallback. Largest free token grant available in 2026 (1B tokens/month)."
+
+  nvidia:
+    kind: openai_compatible
+    base_url: https://integrate.api.nvidia.com/v1
+    api_key_env: NVIDIA_API_KEY
+    signup: https://build.nvidia.com
+    default_model: deepseek-ai/deepseek-v3.2
+    models: [deepseek-ai/deepseek-v3.2, deepseek-ai/deepseek-r1, moonshotai/kimi-k2.5]
+    context_window: 128000
+    free_tier: true
+    credit_card_required: false
+    rate_limit: {rpm: 40}
+    notes: "No token cap, ~40 rpm. No published SLA."
+
+  openrouter:
+    kind: openai_compatible
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    signup: https://openrouter.ai/settings/keys
+    default_model: nvidia/nemotron-3-super-120b-a12b:free
+    models: [nvidia/nemotron-3-super-120b-a12b:free, z-ai/glm-5.2:free, openrouter/free]
+    context_window: 262144
+    free_tier: true
+    credit_card_required: false
+    rate_limit: {rpm: 20, rpd: 50}
+    notes: "50 requests/day with zero payment. Smoke tests only."
+
+  groq:
+    kind: openai_compatible
+    base_url: https://api.groq.com/openai/v1
+    api_key_env: GROQ_API_KEY
+    signup: https://console.groq.com
+    default_model: openai/gpt-oss-120b
+    models: [openai/gpt-oss-120b, openai/gpt-oss-20b, qwen/qwen3.6-27b]
+    context_window: 131072
+    free_tier: true
+    credit_card_required: false
+    rate_limit: {rpm: 30, rpd: 1000, tpm: 8000, tpd: 200000}
+    notes: >
+      WARNING: 8k tokens/minute on the free tier as of 2026-08. Usable only for
+      slices under ~6k tokens. llama-3.3-70b-versatile was removed 2026-08-16.
+
+  local:
+    kind: openai_compatible
+    base_url: http://127.0.0.1:8080/v1
+    api_key_env: LOCAL_API_KEY
+    signup: null
+    # Default sized for a 6 GB laptop GPU (RTX 3060 Laptop): a 7B coder model
+    # at Q4_K_M is ~4.7 GB and leaves room for a 16k KV cache entirely in VRAM.
+    # The 14B and 20B entries need >=10 GB; on a 6 GB card they spill into
+    # system RAM and the run stops being feasible at ~1700 calls.
+    default_model: qwen2.5-coder-7b-instruct-Q4_K_M
+    models: [qwen2.5-coder-7b-instruct-Q4_K_M, qwen2.5-coder-14b-instruct-Q4_K_M,
+             gpt-oss-20b-Q4_K_M]
+    context_window: 16384
+    free_tier: true
+    credit_card_required: false
+    rate_limit: {}
+    notes: >
+      Fully offline reproducibility path. Start with:
+      llama-server -m <model>.gguf -c 32768 --host 127.0.0.1 --port 8080
+      Pin the GGUF by SHA256 and the llama.cpp build by commit.
+
+  mock:
+    kind: mock
+    base_url: null
+    api_key_env: null
+    default_model: deterministic-rule-mock
+    models: [deterministic-rule-mock]
+    context_window: 1000000
+    free_tier: true
+    notes: >
+      Deterministic offline backend. Not a language model: it applies the
+      knowledge base's static_confirmation rules directly. Used for CI, for
+      dry runs, and as the "structure without an LLM" ablation baseline.

@@ -1,0 +1,269 @@
+# Ground truth for the static track.
+#
+# Each label points at a function that exists in the collected corpus and
+# records WHY it carries that class, with a citable source. Labels are matched
+# on (protocol, file_contains, function, vuln_id).
+#
+# Three label layers, per the method:
+#   event    - traceable to a public incident post-mortem
+#   design   - a design property documented in a paper or whitepaper
+#   code     - visible directly in the supplied source
+#
+# Regenerate the anchor check with:  python scripts/check_labels.py
+
+labels:
+
+  # --- Terra Classic: the canonical death-spiral machinery ------------------
+  - protocol: terra-classic
+    file_contains: x/market/keeper/msg_server.go
+    function: handleSwapRequest
+    vuln_id: V1
+    source: "https://www.nber.org/papers/w31160"
+    note: >
+      layer=event/design. Burns the offered coin and calls BankKeeper.MintCoins
+      for the asked coin with no cap, no supply ceiling and no peg-linked
+      circuit breaker. This is the path that expanded LUNA supply from <1e9 to
+      5.89e12 units between 7 and 13 May 2022. The only guard present is the
+      post-hoc SwapDisableForkHeight added after the collapse.
+
+  - protocol: terra-classic
+    file_contains: x/market/keeper/swap.go
+    function: ComputeSwap
+    vuln_id: V2
+    source: "https://doi.org/10.1016/j.jimonfin.2022.102777"
+    note: >
+      layer=design. Prices the stablecoin leg against LUNA, the protocol's own
+      staking token, through a constant-product pool. Lyons & Viswanath-Natraj:
+      "Luna is unsuitable as collateral backing since it is systemically
+      dependent on the value of the TerraUSD token".
+
+  - protocol: terra-classic
+    file_contains: x/market/keeper/swap.go
+    function: ComputeInternalSwap
+    vuln_id: V6
+    source: "https://arxiv.org/abs/1906.06037"
+    note: >
+      layer=design. Reads the exchange rate from the oracle keeper. Terra's
+      oracle was a stake-weighted validator vote — the reporters are the
+      parties economically exposed to the reported price, with no independent
+      median and no deviation bound.
+
+  # --- Iron Finance: the documented latency failure -------------------------
+  - protocol: iron-finance
+    file_contains: contracts/CollateralRatioPolicy.sol
+    function: refreshCollateralRatio
+    vuln_id: V7
+    source: "https://doi.org/10.17016/2380-7172.3121"
+    note: >
+      layer=event. Moves the target collateral ratio by ratio_step (0.25% at
+      genesis) once per refresh_cooldown. Adams & Ibert: this was "too slow to
+      stop the run" of 16 June 2021 — a full traversal needs ~100 hours while
+      the run completed in one day.
+
+  - protocol: iron-finance
+    file_contains: contracts/Pool.sol
+    function: getCollateralPrice
+    vuln_id: V6
+    source: "https://doi.org/10.17016/2380-7172.3121"
+    note: >
+      layer=code. A bare single-source IOracle(oracle).consult() with no
+      staleness check, no median across sources and no deviation bound.
+
+  - protocol: iron-finance
+    file_contains: contracts/Pool.sol
+    function: redeem
+    vuln_id: V2
+    source: "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3888089"
+    note: >
+      layer=design. Pays the non-collateralised part of a redemption in TITAN,
+      the protocol's own share token, valued at _share_price — endogenous
+      collateral in the fractional-algorithmic form.
+
+  - protocol: iron-finance
+    file_contains: contracts/Pool.sol
+    function: collectRedemption
+    vuln_id: V3
+    source: "https://doi.org/10.17016/2380-7172.3121"
+    note: >
+      layer=design. Redemption proceeds are locked behind redemption_delay
+      blocks while minting settles immediately — asymmetric friction on
+      exactly the leg that restores the peg during a run.
+
+  - protocol: iron-finance
+    file_contains: contracts/Pool.sol
+    function: setOracle
+    vuln_id: V4
+    source: "https://www.theblock.co/post/394582/"
+    note: >
+      layer=code. The price source for the whole pool can be replaced by a
+      single onlyOwner call with no timelock and no multisig requirement. Same
+      shape as the Resolv USR incident of 22 March 2026.
+
+  # --- Basis Cash: seigniorage-shares lineage ------------------------------
+  - protocol: basis-cash
+    file_contains: contracts/treasury/Treasury.sol
+    function: allocateSeigniorage
+    vuln_id: V1
+    source: "https://arxiv.org/abs/1906.06037"
+    note: >
+      layer=design. Mints new cash on expansion with no supply ceiling and no
+      breaker. Mita et al. identify the seigniorage-share family's circular
+      dependency: contraction power decays exactly as it is needed.
+
+  - protocol: basis-cash
+    file_contains: contracts/treasury/Treasury.sol
+    function: _getCashPrice
+    vuln_id: V6
+    source: "https://arxiv.org/abs/1906.06037"
+    note: >
+      layer=code. Single IOracle(oracle).consult() call, try/catch only on
+      revert; no staleness, median or deviation validation.
+
+  - protocol: basis-cash
+    file_contains: contracts/treasury/TreasuryState.sol
+    function: setBondOracle
+    vuln_id: V4
+    source: "code review"
+    note: layer=code. Operator can swap the oracle that prices bonds, with no delay.
+
+  # --- Ampleforth: rebase timing -------------------------------------------
+  - protocol: ampleforth
+    file_contains: contracts/UFragmentsPolicy.sol
+    function: rebase
+    vuln_id: V7
+    source: "https://arxiv.org/abs/1906.06037"
+    note: >
+      layer=design. Supply is adjusted once per rebase window against
+      minute-scale market volatility; Mita et al. classify Hayek-money rebase
+      as adjusting M with an unstable purchasing power for holders.
+
+  # --- YAM Finance: the accounting invariant break --------------------------
+  - protocol: yam-finance
+    file_contains: contracts/token/YAM.sol
+    function: rebase
+    vuln_id: V10
+    source: "https://peckshield.medium.com/yam-incident-root-cause-analysis-f3fb2213af53"
+    note: >
+      layer=event/code. Line 340: `totalSupply = initSupply.mul(yamsScalingFactor)`
+      with no `.div(BASE)`. yamsScalingFactor is BASE-scaled (1e18), so the
+      first positive rebase inflated totalSupply by ~1e18 and minted vastly
+      more YAM to the reserve than intended, pushing the reserve past the
+      governance quorum and permanently freezing the protocol ~35 hours after
+      launch on 13 Aug 2020. Verified present in the current master: the repo
+      was abandoned on 2020-08-25 and never patched, so no commit pin is
+      needed. This is the first V10 instance inside the stablecoin corpus
+      rather than only in the external SmartBugs benchmark.
+
+  # --- Beanstalk (pre-attack, pinned): flash-loan governance capture --------
+  - protocol: beanstalk
+    file_contains: protocol/contracts/farm/facets/GovernanceFacet/GovernanceFacet.sol
+    function: emergencyCommit
+    vuln_id: V5
+    source: "https://medium.com/immunefi/hack-analysis-beanstalk-governance-attack-april-2022-f42788fc821e"
+    note: >
+      layer=event. Verified present at line 180 of the pinned pre-attack tree
+      (commit e9f4991, 2022-04-11). Gates execution on bipVotePercent(bip) —
+      voting power derived from the CURRENT balance, with no getPastVotes /
+      snapshot / checkpoint — then calls _execute(msg.sender, bip, false, true)
+      with no timelock. On 17 Apr 2022 an attacker flash-borrowed >$1B, passed
+      the super-majority threshold and executed a malicious BIP inside a single
+      transaction; $181M lost, ~$77M net to the attacker.
+
+  # --- Basis Cash: unbounded operator-set emission --------------------------
+  - protocol: basis-cash
+    file_contains: contracts/distribution/Distribution.sol
+    function: setReward
+    vuln_id: V8
+    source: "https://arxiv.org/abs/1906.06037"
+    note: >
+      layer=code. rewardRate is recomputed from an operator-supplied _amount
+      with no reference to realised protocol income, no cap at revenue earned
+      and no automatic decay as the funding reserve falls — the emission is a
+      pure governance set point. Same structural defect as Anchor's fixed
+      ~19.5% APY, in code that is actually inside this corpus.
+
+  # --- Angle Protocol: single-key oracle control ----------------------------
+  - protocol: angle-protocol
+    file_contains: contracts/stableMaster/StableMaster.sol
+    function: setOracle
+    vuln_id: V4
+    source: "https://github.com/AngleProtocol/angle-core/blob/main/contracts/stableMaster/StableMaster.sol"
+    note: >
+      layer=code. Reassigns the price oracle for a collateral to any address in
+      a single onlyRole(GOVERNOR_ROLE) call. The repository does contain a
+      Timelock contract, but it lives under contracts/deprecated/dao/ and is
+      not the guard wired to GOVERNOR_ROLE in this codebase — same single-key
+      shape as the Iron Finance and Basis Cash V4 labels above.
+
+# Known gaps, recorded deliberately so the evaluation is not silently biased.
+notes:
+  - id: angle-protocol
+    status: partially_labelled
+    reason: >
+      Only setOracle (V4) is hand-verified so far. perpetualManager and
+      feeManager were reviewed but no other function was confirmed to satisfy
+      a class's property with the same confidence; add more labels there
+      before trusting per-class recall figures for this protocol.
+  - id: reserve-protocol
+    status: not_labelled_by_design
+    reason: >
+      Added as a fourth negative control (basket-collateralised + RSR
+      insurance, no peg failure). Like the other controls (Reflexer RAI,
+      Liquity, Mento) it intentionally carries zero positive labels — it
+      exists to measure the false-positive rate, not to contribute recall.
+  - id: V5
+    status: labelled
+    reason: >
+      Closed. `beanstalk` is now pinned to commit e9f4991 (2022-04-11), six
+      days before the attack, where emergencyCommit still exists; the
+      post-remediation tree is carried separately as `beanstalk-patched`.
+      Beanstalk removed the entire GovernanceFacet after the attack, so the
+      patched variant has 0 governance slices against the pinned tree's 47 —
+      any V5 hit in `beanstalk-patched` is a false positive by construction.
+      This is the project's only true vulnerable/patched A/B pair.
+  - id: V8
+    status: labelled
+    reason: >
+      Closed. Previously this note claimed V8 was exercised against the Basis
+      Cash and ESD reward contracts, but no V8 label actually existed — the
+      claim was wrong and is corrected here. Basis Cash
+      Distribution.setReward is now labelled and hand-verified. Anchor
+      Protocol itself (the 19.5% APY that drove UST demand) remains outside
+      the corpus: it was a separate CosmWasm repository, not part of
+      classic-core.
+  - id: V8_additional
+    status: known_unlabelled_instance
+    reason: >
+      ESD pays a hardcoded ADVANCE_INCENTIVE of 2500 ESD
+      (protocol/contracts/Constants.sol:41) minted fresh by
+      Implementation.incentivize with no revenue binding. It is a genuine
+      second V8 instance but is deliberately left unlabelled: incentivize is
+      a private helper whose body contains none of V8's must_call terms, so
+      labelling it would score as a false negative caused by the retrieval
+      vocabulary rather than by the model's judgement. Recorded here so the
+      omission is visible rather than silent.
+  - id: V10
+    status: labelled
+    reason: >
+      Closed in-corpus. YAM Finance's rebase() carries a real, incident-backed
+      accounting-invariant break (see the label above), so V10 no longer
+      depends solely on the external benchmark.
+  - id: V9
+    status: benchmark_only
+    reason: >
+      Still has no hand-verified instance inside the stablecoin corpus. Fei's
+      $80M Rari/Fuse reentrancy is the obvious candidate, but the exploited
+      pool code lives in the Rari repository, not in fei-protocol-core. V9 is
+      therefore measured on the external SmartBugs track only — run
+      `asv corpus --benchmarks && asv slice && python scripts/import_smartbugs.py`,
+      then score it with `asv evaluate --labels smartbugs.yaml`. Treat the
+      headline V9 row as uninformative rather than as a real zero.
+  - id: benchmark_track
+    status: separate_by_design
+    reason: >
+      labels/smartbugs.yaml holds 196 externally-assigned labels
+      (V9 113, V10 52, V4 19, V7 12) resolved from SmartBugs line numbers to
+      enclosing functions. It is deliberately NOT loaded by the default
+      evaluation: those contracts are toy DASP examples, not stablecoins, and
+      folding them into the headline numbers would let a synthetic benchmark
+      dominate a result about stablecoin protocols.

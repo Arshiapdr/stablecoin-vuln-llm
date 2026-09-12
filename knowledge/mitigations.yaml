@@ -1,0 +1,152 @@
+# Prevention knowledge base — one entry per vulnerability class.
+# `patch` is a minimal Solidity fragment the pipeline offers as a fix template.
+
+M1:
+  for: V1
+  title: Bound the absorbing mint and add a peg circuit breaker
+  actions:
+    - Per-epoch mint cap (<= 1% of absorbing-token supply per hour)
+    - Global supply ceiling on the absorbing token
+    - Suspend the swap when |P - 1| > 0.05 for >= 5 consecutive minutes
+    - Hold a partial exogenous reserve so the absorbing leg is never the only backstop
+  patch: |
+    uint256 public constant MAX_MINT_PER_EPOCH = ...;  // <= 1% of supply
+    uint256 private epochMinted; uint256 private epochStart;
+    modifier withinMintCap(uint256 amt) {
+        if (block.timestamp >= epochStart + EPOCH) { epochStart = block.timestamp; epochMinted = 0; }
+        require(epochMinted + amt <= MAX_MINT_PER_EPOCH, "mint cap");
+        epochMinted += amt; _;
+    }
+    modifier pegHealthy() {
+        (uint256 p, uint256 age) = oracle.price();
+        require(age <= MAX_AGE && p >= PEG - BAND && p <= PEG + BAND, "breaker"); _;
+    }
+
+M2:
+  for: V2
+  title: Floor the design with exogenous collateral
+  actions:
+    - Enforce a minimum exogenous collateral ratio on every mint
+    - Value the reserve ignoring the protocol's own token
+    - Publish the solvency invariant on-chain
+  patch: |
+    function _requireSolvent() internal view {
+        uint256 exo = reserve.exogenousValueUSD();      // excludes own token
+        require(exo * 1e18 >= totalSupply() * MIN_CR, "undercollateralised");
+    }
+
+M3:
+  for: V3
+  title: Symmetric, permissionless primary-market access
+  actions:
+    - redeem_fee == mint_fee
+    - No whitelist on the primary market
+    - Replace fixed daily caps with a rate limit proportional to supply
+    - Track and publish the number of distinct redeeming addresses
+  patch: |
+    uint256 public constant MINT_FEE_BPS   = 10;
+    uint256 public constant REDEEM_FEE_BPS = 10;   // must equal MINT_FEE_BPS
+    // remove onlyWhitelisted from redeem()
+
+M4:
+  for: V4
+  title: No single key on a supply-critical path
+  actions:
+    - Multisig (>= 3-of-5) + timelock on every privileged function
+    - Separate mint / pause / upgrade roles
+    - Per-call and per-day caps even for the admin role
+    - Delay and event on every role grant
+  patch: |
+    function mint(address to, uint256 amt)
+        external onlyRole(MINTER_ROLE) withinMintCap(amt)
+    { require(to != address(0), "zero"); _mint(to, amt); emit PrivilegedMint(msg.sender, to, amt); }
+    // MINTER_ROLE admin == TimelockController owned by a 3-of-5 multisig
+
+M5:
+  for: V5
+  title: Snapshot voting power, enforce an unconditional timelock
+  actions:
+    - Read votes from a checkpoint at (proposal block - 1)
+    - votingDelay >= 1 block, timelock >= 24h
+    - No emergency execution path reachable by token holders
+  patch: |
+    function _getVotes(address a, uint256 id) internal view returns (uint256) {
+        return token.getPastVotes(a, proposals[id].snapshotBlock);
+    }
+    // and: no execute() path that runs before timelock.eta
+
+M6:
+  for: V6
+  title: TWAP + median + staleness + deviation bound
+  actions:
+    - TWAP window >= 30 minutes for mint/redeem pricing
+    - Median of >= 3 independent sources
+    - Revert if the price is older than 1 hour
+    - Reject updates deviating >10% from the last accepted price
+    - Add a delay layer with a freeze capability (Oracle Security Module pattern)
+  patch: |
+    function _price() internal view returns (uint256) {
+        (uint80 rid, int256 a,, uint256 upd, uint80 ans) = feed.latestRoundData();
+        require(a > 0 && ans >= rid, "bad round");
+        require(block.timestamp - upd <= MAX_STALENESS, "stale");
+        uint256 twap = twapOracle.consult(TWAP_WINDOW);
+        require(_absDiffBps(uint256(a), twap) <= MAX_DEV_BPS, "deviation");
+        return twap < uint256(a) ? twap : uint256(a);   // conservative
+    }
+
+M7:
+  for: V7
+  title: Match adjustment speed to shock speed
+  actions:
+    - Size the step so the full parameter range is traversable within <= 6 hours
+    - Price both legs of a redemption from one timestamp
+    - Provide an emergency step faster than the routine step
+  patch: |
+    (uint256 pStable, uint256 pShare, uint256 ts) = oracle.pricesAt(block.timestamp);
+    require(block.timestamp - ts <= MAX_STALENESS, "stale snapshot");
+
+M8:
+  for: V8
+  title: Cap distributions at realised revenue
+  actions:
+    - Rate is a function of realised income, not a constant
+    - Automatic downward adjustment as the reserve falls (<= 1.5pp/month)
+    - Force the revenue-funded rate when runway < 90 days
+    - Publish runway on-chain
+  patch: |
+    function _accrue() internal {
+        uint256 earned = strategy.realisedIncome();
+        uint256 pay = earned < budget ? earned : budget;
+        _distribute(pay);                      // never pays more than it earns
+    }
+
+M9:
+  for: V9
+  title: Secure-coding controls on every supply-critical path
+  actions:
+    - Checks-Effects-Interactions; nonReentrant on all external-call paths
+    - Validate every user-supplied token, address and amount
+    - solc >= 0.8 or SafeMath; check every low-level return value
+    - initializer / _disableInitializers on upgradeable contracts
+    - Slither in CI with zero-tolerance detectors
+  patch: |
+    function redeem(uint256 amt) external nonReentrant {
+        require(amt > 0 && amt <= balanceOf(msg.sender), "amount");
+        _burn(msg.sender, amt);                       // effects first
+        require(collateral.transfer(msg.sender, _quote(amt)), "transfer failed");
+    }
+
+M10:
+  for: V10
+  title: State the invariant, assert it, fuzz it
+  actions:
+    - Write each accounting invariant as a Foundry invariant test
+    - Round in the protocol's favour on both legs
+    - Guard totalSupply == 0 and donation inflation of totalAssets
+  patch: |
+    function invariant_supplyBackedByReserve() public view {
+        assertGe(reserve.valueUSD(), stable.totalSupply());
+    }
+    function invariant_swapConservesValue() public view {
+        assertApproxEqRel(burnedStableValue, mintedAbsorbingValue, FEE_TOLERANCE);
+    }

@@ -1,0 +1,669 @@
+# Vulnerability knowledge base.
+#
+# static_checks vocabulary covers Solidity, Cosmos-SDK Go and Ride. The
+# Solidity-only lists this file shipped with confirmed 15.6% of Solidity
+# (slice, class) pairs but only 7.6% of Go and 2.1% of Ride ones: Neutrino was
+# seven times less likely to pass than a Solidity protocol for reasons of
+# vocabulary rather than security. Terms were added by construct equivalence
+# -- for each Solidity operation already listed, the Go/Ride construct that
+# performs the same thing -- and `*_patterns` (regex) express scenarios a
+# literal cannot, such as "any privileged setter", which is identified by the
+# function a slice DECLARES rather than by a call inside its body.
+#
+# KNOWN REMAINING BIAS: the must_lack guard vocabulary is still
+# Solidity-centric, so guards written in Go/Ride may go undetected and those
+# protocols may be over-flagged. All six control protocols are Solidity, so
+# this does not flatter the study/control comparison, but it is a limitation.
+
+V1:
+  title: Uncapped absorbing-token mint with no circuit breaker
+  report_category: A1
+  layer: economic
+  applies_to:
+  - dual_token
+  - seigniorage_shares
+  - fractional_hybrid
+  severity: critical
+  scenario: 'The function absorbs a stablecoin redemption by minting a second token (share / governance
+    / staking token), or mints the stablecoin by burning that token, at a rate read at call time.
+
+    '
+  property: 'Vulnerable if the minted amount has no per-call, per-block or per-epoch cap and no global
+    supply ceiling, AND there is no pause or circuit breaker tied to peg deviation.
+
+    '
+  evidence: '7.42B UST were swapped into LUNA between 7-13 May 2022; LUNA supply went from <1e9 to 5.89e12
+    units [Liu, Makarov & Schoar, NBER w31160]. The Terra whitepaper concedes it: "volatility is moved
+    from Terra price to Luna supply".
+
+    '
+  key_variables:
+  - mintAmount
+  - shareAmount
+  - totalSupply
+  - exchangeRate
+  static_checks:
+    must_call:
+    - _mint
+    - mint(
+    - issue(
+    - safeMint
+    - MintCoins
+    - handleSwapRequest
+    - BurnCoins
+    - SetSupply
+    - AddSupply
+    - MintCoin
+    - Issue(
+    - Reissue
+    must_lack:
+    - maxSupply
+    - supplyCap
+    - mintCap
+    - dailyLimit
+    - rateLimit
+    - whenNotPaused
+    - circuitBreaker
+    - maxMintPerBlock
+    - MaxMint
+    must_call_patterns:
+    - \b(Mint|Burn)Coins?\b
+    - \bIssue\s*\(
+  retrieval_hints:
+  - swap
+  - burn
+  - seigniorage
+  - expansion
+  - allocateSeigniorage
+  - MintCoins
+  mitigation: M1
+V2:
+  title: Endogenous collateral (backing asset is the protocol's own token)
+  report_category: A1
+  layer: economic
+  applies_to:
+  - dual_token
+  - seigniorage_shares
+  - fractional_hybrid
+  severity: critical
+  scenario: 'Solvency, backing value, collateral ratio or redemption value is computed from the balance
+    or price of a token issued or controlled by this protocol.
+
+    '
+  property: 'Vulnerable if the backing asset is not exogenous — its price depends on confidence in the
+    liability it backs — and there is no exogenous collateral floor that stays solvent when that token
+    goes to zero.
+
+    '
+  evidence: '"Luna is unsuitable as collateral backing since it is systemically dependent on the value
+    of the TerraUSD token" [Lyons & Viswanath-Natraj, JIMF 2023]. LUNA mcap / UST supply hit 1.0 on 9
+    May 2022 and ~0.1 by 12 May.
+
+    '
+  key_variables:
+  - collateralToken
+  - shareToken
+  - collateralRatio
+  - backingValue
+  static_checks:
+    must_call:
+    - balanceOf
+    - totalSupply
+    - collateralValue
+    - globalCollateralValue
+    - GetSupply
+    - TotalSupply
+    - bondDenom
+    - MicroLunaDenom
+    - LunaDenom
+    - assetBalance
+    - wavesBalance
+    - BasePool
+    - poolDelta
+    must_lack:
+    - minCollateralRatio
+    - exogenous
+    - USDC
+    - DAI
+    - WETH
+    - WBTC
+    - reserveAsset
+    must_call_patterns:
+    - \bGet(Total)?Supply\b
+    - \bassetBalance\s*\(
+  retrieval_hints:
+  - share
+  - luna
+  - collateral_ratio
+  - _share_price
+  - sharePrice
+  - ecr
+  - shareToken
+  - ComputeSwap
+  - askDenom
+  - offerCoin
+  mitigation: M2
+V3:
+  title: Redemption friction that disables arbitrage under stress
+  report_category: A2
+  layer: economic
+  applies_to:
+  - dual_token
+  - seigniorage_shares
+  - fractional_hybrid
+  - pcv_backed
+  severity: high
+  scenario: 'The function is the primary-market path an arbitrageur uses to restore the peg (redeem /
+    burn-for-collateral / mint) and applies a fee, cap, cooldown, queue, minimum size or whitelist.
+
+    '
+  property: 'Vulnerable if the friction is asymmetric (redeem costlier or more limited than mint), or
+    the cap binds hardest during stress (fixed daily notional, fee rising with deviation), or primary-market
+    access is whitelisted.
+
+    '
+  evidence: 'Krause names "fees and daily limits" as a design flaw that deters arbitrage exactly when
+    it is needed. Tether: 0.1% deposit fee vs $1,000 minimum redemption; 87% of deposits but no comparable
+    redemption arbitrage motive [Lyons & Viswanath-Natraj]. Tether averaged 6 redemption agents/month
+    with 66% concentration vs USDC''s 521 [Ma, Zeng & Zhang, NBER w33882].
+
+    '
+  key_variables:
+  - redeemFee
+  - mintFee
+  - dailyLimit
+  - cooldown
+  - whitelist
+  static_checks:
+    must_call:
+    - redeem
+    - burn
+    - withdraw
+    - collectRedemption
+    - Withdraw
+    - Undelegate
+    - Redeem
+    - ScriptTransfer
+    must_have:
+    - fee
+    - limit
+    - cooldown
+    - whitelist
+    - onlyWhitelisted
+    - minAmount
+    - delay
+    - _delay
+    - unbond
+    - Unbonding
+    - timeout
+    - waitPeriod
+    - redemption_delay
+    - withdrawalDelay
+    - queue
+    must_have_patterns:
+    - \b\w*(delay|cooldown|lockup|timeout|unbond|waitperiod)\w*\b
+  retrieval_hints:
+  - redeem
+  - redemption_delay
+  - redemption_fee
+  - collectRedemption
+  - unclaimed
+  mitigation: M3
+V4:
+  title: Privileged or unprotected control over supply / pause / upgrade
+  report_category: A3
+  layer: governance
+  applies_to:
+  - all
+  severity: critical
+  scenario: 'The function mints, burns, pauses, blacklists, sets a critical parameter, changes the oracle
+    address or upgrades the implementation.
+
+    '
+  property: 'Vulnerable if authority is a single EOA rather than multisig+timelock, or the role transfers
+    without delay, or there is no access-control modifier at all, or a privileged mint has no per-call
+    / per-period cap.
+
+    '
+  evidence: 'Resolv USR, 22 Mar 2026: SERVICE_ROLE on a plain EOA, no amount validation, no max-mint cap;
+    100k USDC returned 50M USR, ~80M unbacked USR minted, price $1.00 -> $0.025 in 17 minutes. Zhou et
+    al. log 22 private-key incidents (12%).
+
+    '
+  key_variables:
+  - owner
+  - admin
+  - role
+  - implementation
+  - oracle
+  - paused
+  static_checks:
+    must_call:
+    - setOracle
+    - setTreasury
+    - setPrice
+    - setParam
+    - setFee
+    - setRatio
+    - setRedemptionFee
+    - setMintingFee
+    - setCollateral
+    - upgradeTo
+    - grantRole
+    - revokeRole
+    - transferOwnership
+    - pause(
+    - unpause(
+    - blacklist
+    - mint(address
+    - SetParams
+    - UpdateParams
+    - setAdmin
+    - setOwner
+    - setGovernance
+    - MsgUpdateParams
+    must_lack:
+    - timelock
+    - Timelock
+    - multisig
+    - Multisig
+    - onlyGovernance
+    - GovernorTimelock
+    - votingDelay
+    - queueTransaction
+    slither:
+    - suicidal
+    - arbitrary-send
+    - unprotected-upgrade
+    - missing-zero-check
+    must_call_patterns:
+    - \bfunc(tion)?\s+\(?[^)]*\)?\s*(set|update|change)[A-Z_]\w*\s*\(
+    - \b(set|update|change)[A-Z_]\w*\s*\(
+    - '@Callable\s*\('
+  retrieval_hints:
+  - onlyOwner
+  - setOracle
+  - setTreasury
+  - operator
+  - governance
+  mitigation: M4
+V5:
+  title: Atomic governance capture via flash-loanable voting power
+  report_category: A3
+  layer: governance
+  applies_to:
+  - all
+  severity: critical
+  scenario: 'On-chain governance derives voting power from a token / LP / staked balance and proposals
+    can be created, voted on or executed by transactions.
+
+    '
+  property: 'Vulnerable if voting power is read from the CURRENT balance rather than a checkpoint before
+    the proposal block, OR an emergency/instant execution path can run in the same transaction as the
+    votes, bypassing the timelock.
+
+    '
+  evidence: 'Beanstalk, 17 Apr 2022: >$1B flash-borrowed, emergencyCommit executed a malicious proposal
+    at >=2/3 votes inside one transaction; $181M loss, ~$77M net to the attacker [Immunefi post-mortem].
+
+    '
+  key_variables:
+  - votes
+  - votingPower
+  - proposal
+  - quorum
+  - timelock
+  - snapshotBlock
+  static_checks:
+    must_call:
+    - balanceOf(msg.sender)
+    - getVotes
+    - vote(
+    - propose(
+    - execute(
+    - emergencyCommit
+    - Vote
+    - Proposal
+    - Tally
+    - SubmitProposal
+    - VotingPower
+    - Delegate
+    must_lack:
+    - getPastVotes
+    - getPriorVotes
+    - snapshot
+    - checkpoint
+    - timelock
+    - votingDelay
+    must_call_patterns:
+    - \b(vote|propose|execute|tally)\w*\s*\(
+  retrieval_hints:
+  - proposal
+  - quorum
+  - vote
+  - delegate
+  - timelock
+  mitigation: M5
+V6:
+  title: Manipulable or unvalidated price source
+  report_category: A4
+  layer: oracle
+  applies_to:
+  - all
+  severity: critical
+  scenario: 'The function determines an exchange rate, collateral value, redemption amount, liquidation
+    trigger or mint/burn quantity from a price read at call time.
+
+    '
+  property: 'Vulnerable if the source is a single DEX reserve, a balanceOf/getReserves spot quote, a single
+    oracle call or a self-reported value, AND it lacks a TWAP, a multi-source median, a staleness check
+    and a deviation bound.
+
+    '
+  evidence: 'Oracle manipulation is 34.3% of real-world DeFi exploits but only 5.9% of audit findings,
+    and 75% were found by a single auditor [Zhang et al., ICSE 2023]. BonqDAO BEUR (Feb 2023) used its
+    last reported price as spot.
+
+    '
+  key_variables:
+  - price
+  - rate
+  - reserve0
+  - reserve1
+  - oracle
+  - answer
+  - updatedAt
+  static_checks:
+    must_call:
+    - getReserves
+    - latestAnswer
+    - latestRoundData
+    - consult
+    - getPrice
+    - getAmountsOut
+    - price0Cumulative
+    - ExchangeRate
+    - GetLunaExchangeRate
+    - OracleKeeper
+    - GetExchangeRate
+    - oracleValue
+    - getOracle
+    - priceProvider
+    must_lack:
+    - updatedAt
+    - twap
+    - TWAP
+    - observe
+    - median
+    - maxDeviation
+    - heartbeat
+    - answeredInRound
+    must_call_patterns:
+    - \b(get|read|fetch)\w*(Price|Rate|Oracle)\w*\s*\(
+    - \bExchangeRate\w*\b
+  retrieval_hints:
+  - oracle
+  - consult
+  - price
+  - exchangeRate
+  - ExchangeRate
+  - GetLunaExchangeRate
+  mitigation: M6
+V7:
+  title: Price or supply-adjustment latency slower than the shock
+  report_category: A4
+  layer: oracle
+  applies_to:
+  - all
+  severity: high
+  scenario: 'The contract adjusts a stabilising parameter on a fixed cadence or by a bounded step per
+    period, or prices a redemption from a time-averaged price while delivering an asset valued at spot.
+
+    '
+  property: 'Vulnerable if the max rate of change (step / period) cannot traverse the parameter''s full
+    range within hours, or if the burned and delivered legs are priced from different timestamps.
+
+    '
+  evidence: 'Iron Finance, 16 Jun 2021: redemptions priced from a 10-minute TITAN TWAP while spot collapsed,
+    making it profitable to mint IRON below redemption value; the target collateral ratio moved only 0.25%/hour
+    — "too slow to stop the run" [Adams & Ibert, FEDS Notes 2022].
+
+    '
+  key_variables:
+  - collateralRatio
+  - cooldown
+  - ratioStep
+  - period
+  - twapWindow
+  static_checks:
+    must_call:
+    - cooldown
+    - refresh_cooldown
+    - ratio_step
+    - rebase
+    - last_refresh
+    - lastRebase
+    - epoch
+    - twapWindow
+    - VotePeriod
+    - BlocksPerEpoch
+    - PoolRecoveryPeriod
+    - RewardDistribution
+    - lastUpdate
+    - updatePeriod
+    - height
+    must_lack:
+    - updatedAt
+    - MAX_STALENESS
+    - staleness
+    - pricesAt
+    - heartbeat
+    - answeredInRound
+    capture_numbers:
+    - (?:step|delta|cooldown|period|window)\s*=\s*([0-9_]+)
+    must_call_patterns:
+    - \b\w*(period|interval|epoch|cooldown|delay)\w*\s*[=:(),]
+  retrieval_hints:
+  - cooldown
+  - refresh
+  - rebase
+  - ratio_step
+  - twap
+  - epoch
+  - lastRebase
+  mitigation: M7
+V8:
+  title: Subsidised or hardcoded yield manufacturing artificial demand
+  report_category: A5
+  layer: economic
+  applies_to:
+  - all
+  severity: high
+  scenario: 'The contract pays a deposit rate, staking reward or earn rate to stablecoin holders, set
+    as a constant or a governance set point.
+
+    '
+  property: 'Vulnerable if the rate is not bounded by realised revenue — no on-chain cap at income earned,
+    no automatic reduction as the funding reserve falls — and is materially above the risk-free benchmark.
+
+    '
+  evidence: 'Anchor paid ~19.5-20% APY, held ~12B of 18.5B UST, and burned ~$6M/day of subsidy by April
+    2022; deposits fell from 75.2% of UST supply on 6 May to 32.9% on 11 May [Liu et al.; Briola et al.].
+
+    '
+  key_variables:
+  - depositRate
+  - earnRate
+  - apy
+  - rewardRate
+  - yieldReserve
+  static_checks:
+    must_call:
+    - rewardRate
+    - rewardPerToken
+    - depositRate
+    - earnRate
+    - interestRate
+    - apy
+    - apr
+    - getReward
+    - notifyRewardAmount
+    - setReward
+    - distributeReward
+    - stakingReward
+    - yieldRate
+    - Inflation
+    - MintParams
+    - RewardPool
+    - distributionKeeper
+    - bonusRate
+    must_lack:
+    - realisedIncome
+    - realizedIncome
+    - revenue
+    - earned(
+    - decayRate
+    - adjustRate
+    - cappedByIncome
+    capture_numbers:
+    - (?:rewardRate|apy|apr)\s*=\s*([0-9_]+)
+    must_call_patterns:
+    - \b\w*(reward|yield|apr|apy|inflation)\w*\s*[=(]
+  retrieval_hints:
+  - reward
+  - apy
+  - rate
+  - boardroom
+  - stake
+  - incentive
+  - emission
+  mitigation: M8
+V9:
+  title: Classic code defect on a supply-critical path
+  report_category: A6
+  layer: implementation
+  applies_to:
+  - all
+  severity: critical
+  scenario: 'The function mints, burns, redeems, deposits, withdraws, liquidates or updates accounting
+    state, and performs an external call, arithmetic on user input, or a delegatecall.
+
+    '
+  property: 'Vulnerable if an external call precedes the state update that guards it (reentrancy), a user-supplied
+    token/address/amount is unvalidated, a low-level call''s return value is ignored, arithmetic can overflow
+    on solc <0.8 without SafeMath, delegatecall is caller-controlled, or an initialiser is unprotected.
+
+    '
+  evidence: 'Code defects are 38.64% of the 44 stablecoin incidents catalogued by Ling et al. — the largest
+    single root cause. Cashio minted ~$53M against unvalidated accounts; Platypus lost $8.5M to an emergencyWithdraw
+    solvency check that ignored outstanding debt; Fei/Rari lost $80M to reentrancy.
+
+    '
+  key_variables:
+  - amount
+  - token
+  - to
+  - target
+  - balance
+  - data
+  static_checks:
+    must_call:
+    - .call(
+    - .delegatecall(
+    - transferFrom
+    - _mint
+    - _burn
+    - initialize
+    - ScriptTransfer
+    - SendCoins
+    - TransferCoins
+    must_lack:
+    - nonReentrant
+    - ReentrancyGuard
+    - SafeMath
+    - initializer
+    slither:
+    - reentrancy-eth
+    - reentrancy-no-eth
+    - unchecked-lowlevel
+    - unchecked-transfer
+    - arbitrary-send
+    - controlled-delegatecall
+    - uninitialized-state
+    - unprotected-upgrade
+    - divide-before-multiply
+    must_call_patterns:
+    - \.\s*(call|delegatecall)\s*\{?
+    - \bSendCoins?\b
+  retrieval_hints:
+  - transfer
+  - call
+  - initialize
+  - delegatecall
+  - approve
+  mitigation: M9
+V10:
+  title: Broken mint/burn conservation or accounting invariant
+  report_category: A7
+  layer: implementation
+  applies_to:
+  - all
+  severity: high
+  scenario: 'The function changes total supply, a recorded reserve/collateral balance, an internal share
+    balance, or the share/underlying exchange rate.
+
+    '
+  property: 'Vulnerable if the update breaks the accounting invariant: tokens minted without a checked
+    increase in backing; credit issued before the burn is verified; share price = totalAssets/totalSupply
+    with no zero-supply or donation guard; rounding favouring the caller on both legs; or fee deducted
+    from a balance already used to size the mint.
+
+    '
+  evidence: '"Erroneous accounting" is 26.6% of Code4rena machine-unauditable findings [Zhang et al.,
+    ICSE 2023]; CyberChainBench (2026) puts accounting errors at 32% of 541 real incidents. Compound lost
+    >$80M to a bad APY calculation that survived nine audits and formal verification.
+
+    '
+  key_variables:
+  - totalSupply
+  - totalAssets
+  - shares
+  - reserve
+  - pricePerShare
+  - fee
+  static_checks:
+    must_call:
+    - _mint
+    - _burn
+    - totalSupply
+    - totalAssets
+    - shares
+    - GetSupply
+    - SetSupply
+    - AddSupply
+    - SubSupply
+    - totalIssued
+    must_lack:
+    - invariant
+    - assert(
+    - mulDiv
+    - FullMath
+    - Math.Rounding
+    slither:
+    - divide-before-multiply
+    - incorrect-equality
+    must_call_patterns:
+    - \b(Add|Sub|Set)Supply\b
+    - \btotal(Supply|Assets|Issued)\b
+  invariants:
+  - supply_after == supply_before - burned  (for every redeem path)
+  - for every path increasing totalSupply there is a checked backing increase
+  - pricePerShare never decreases from a single actor's deposit+withdraw in one tx
+  retrieval_hints:
+  - totalSupply
+  - shares
+  - balance
+  - reserve
+  - mul
+  - div
+  mitigation: M10

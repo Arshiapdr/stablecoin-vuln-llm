@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "asv"
+version = "0.1.0"
+description = "Algorithmic-stablecoin vulnerability detection and prevention with free LLMs"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "click>=8.1",
+    "PyYAML>=6.0",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+dev  = ["pytest>=7.4", "matplotlib>=3.7"]
+plot = ["matplotlib>=3.7"]
+sa   = ["slither-analyzer>=0.10"]
+
+[project.scripts]
+asv = "asv.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

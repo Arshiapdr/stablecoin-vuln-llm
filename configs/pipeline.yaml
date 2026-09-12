@@ -1,0 +1,94 @@
+# Pipeline configuration. Every stage reads only from this file plus the CLI.
+seed: 20260825
+
+paths:
+  raw: data/raw
+  interim: data/interim
+  processed: data/processed
+  results: results
+  cache: .cache
+
+corpus:
+  max_file_bytes: 400000
+  exclude_dir_patterns:
+    - node_modules
+    - "/test/"
+    - "/tests/"
+    - "/mock"
+    - "/mocks/"
+    - "/interfaces/"
+    - "/lib/"
+    - "/libs/"
+    - "/external/"
+    - "/vendor/"
+    - "openzeppelin"
+    - "/migrations/"
+    - "/scripts/"
+    - "_test.go"
+  exclude_file_patterns:
+    - "IERC"
+    - "Migrations.sol"
+
+preprocess:
+  max_slice_tokens: 4000
+  context_lines_before: 0
+  include_state_vars: true
+  include_modifiers: true
+  include_callee_signatures: true
+  normalize_identifiers: true      # produces the contamination-control variant
+  min_slice_chars: 60
+
+retrieval:
+  top_k: 4                          # vulnerability classes checked per slice
+  always_include: []                # e.g. ["V07"] to force a class on every slice
+  min_score: 0.0
+
+detect:
+  auditors: 2
+  findings_per_auditor: 3
+  auditor_temperature: 0.7
+  critic_temperature: 0.0
+  critic_min_correctness: 5
+  critic_min_profitability: 3
+  require_static_confirmation: true
+  static_confirmation_weight: 0.35   # score multiplier when confirmation fails
+  use_slither_signals: true
+
+behavior:
+  depeg_threshold: 0.99
+  severe_threshold: 0.95
+  failure_threshold: 0.80
+  min_consecutive_minutes: 5
+  # Floor on consecutive samples, applied on top of min_consecutive_minutes.
+  # On minute data the minute rule already demands 5 samples, so this is inert.
+  # On the hourly series that cover the other 15 protocols the minute rule
+  # collapses to 1 sample, which would let a single print below the threshold
+  # open an "episode" — a far weaker claim than Terra's five-minute-confirmed
+  # ones, under the same word. 2 is the smallest floor that requires the price
+  # to still be below the threshold at the next observation.
+  min_consecutive_samples: 2
+  sensitivity_grid: [0.995, 0.99, 0.985, 0.98, 0.97, 0.95, 0.90]
+  supply_growth_window_hours: 24
+  supply_growth_alert: 0.50          # +50% absorbing supply in the window
+  backing_ratio_alert: 1.5           # absorbing mcap / stable supply
+  pool_imbalance_alert: 0.70         # one side >70% of a 2-asset pool
+
+evaluation:
+  bootstrap_iterations: 2000
+  confidence_level: 0.95
+  ranked_k: [1, 3, 5]
+
+llm:
+  providers_order: [gemini, mistral, nvidia, openrouter, groq, local, mock]
+  request_timeout_s: 120
+  max_retries: 4
+  backoff_base_s: 2.0
+  cache_responses: true
+  # Output budget per call. Reasoning models (Gemini 2.5 Flash among them) bill
+  # hidden thinking tokens against this, and when the budget runs out they
+  # return HTTP 200 with an EMPTY message and finish_reason="length" -- no
+  # visible answer at all. 1400 was too small for the auditor prompt.
+  max_output_tokens: 4096
+  # Abort a detect run after this many provider failures with no successful
+  # call, instead of producing a full run of empty findings.
+  fail_fast_after_errors: 8

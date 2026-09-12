@@ -1,0 +1,522 @@
+# Corpus definition.
+#
+# THREE INDEPENDENT AXES. They were previously collapsed into one `tier` field,
+# which conflated "is this design algorithmic?" with "did its peg fail?" — and
+# produced two indefensible rows: Fei (fully collateral-backed, its algorithmic
+# mechanism retired in 2021) sat in the algorithmic study set because it had a
+# famous incident, while Reflexer RAI (a PID controller continuously adjusting
+# the redemption rate — genuinely an algorithmic peg mechanism) sat in the
+# controls because its peg held.
+#
+# 1. `algorithmic:` — a property of the MECHANISM, independent of outcome.
+#      pure    = uncollateralised; the peg is defended by supply changes alone
+#      partial = partially collateralised, with an algorithmic ratio/fee
+#                controller and an endogenous share token absorbing redemptions
+#      none    = the peg is defended by exogenous collateral
+#
+# 2. `tier:` — the protocol's ROLE in the evaluation, nothing more.
+#      study   = in scope for the headline result
+#      control = expected negative; measures the false-positive rate
+#
+# 3. `family:` — the mechanism descriptor used by knowledge/vulnerabilities.yaml
+#    `applies_to`. Note that V1-V3 are structurally impossible without an
+#    absorbing token, so a rebase design cannot exhibit them.
+#
+# Report the results in three layers: `algorithmic: pure` is the report's true
+# scope, `pure + partial` is the extended set, and the controls give the
+# false-positive rate. Do not quote a single blended number.
+#
+# `paths` are repository-relative globs restricted to the stabilisation logic;
+# vendored libraries, tests and mocks are excluded by the collector.
+#
+# Every entry is a public repository under a permissive licence. Nothing here
+# is scraped from a block explorer, so the corpus is reproducible with git alone.
+#
+# Candidates considered and deliberately NOT included, for reproducibility:
+#   - Djed (Cardano/COTI): no public repository contains the on-chain Plutus
+#     validators. COTI's 2024 "open source" release covers only the order API,
+#     chain indexer and frontend (github.com/artifi-labs/open-djed); the
+#     protocol contracts themselves are not published. Cannot be gathered by
+#     git alone, so it is excluded rather than reconstructed from third-hand
+#     sources.
+#   - USDD (Tron): no dedicated, canonical open-source contract repository
+#     could be located (only the generic tronprotocol/java-tron node code).
+#   - Float Protocol: the org's public repos (float-staking, float-ui, ...)
+#     do not include the core bank/vault contracts; the protocol appears to
+#     be defunct and the core repo unreachable under any plausible name.
+
+protocols:
+
+  - name: terra-classic
+    display: Terra Classic (UST / LUNA)
+    tier: study
+    algorithmic: pure
+    language: go
+    repo: https://github.com/terra-money/classic-core
+    ref: main
+    license: Apache-2.0
+    paths:
+      - "x/market/**/*.go"
+      - "x/treasury/**/*.go"
+      - "x/oracle/**/*.go"
+    mechanism: dual_token_seigniorage
+    family: dual_token          # report: dual-token mechanism
+    market:
+      peg_target: usd
+      binance_symbol: USTUSDT
+      binance_months: ["2022-04", "2022-05"]
+      llama_coin: coingecko:terrausd
+      llama_start: 1651363200
+      llama_span: 400
+      stablecoin_id: 3
+    incident:
+      date: "2022-05-09"
+      summary: "UST depegged and collapsed; LUNA supply expanded ~5900x"
+      loss_usd: 40000000000
+      source: "https://www.nber.org/papers/w31160"
+
+  - name: basis-cash
+    display: Basis Cash (BAC / BAB / BAS)
+    tier: study
+    algorithmic: pure
+    language: solidity
+    repo: https://github.com/Basis-Cash/basiscash-protocol
+    ref: master
+    license: MIT
+    paths:
+      - "contracts/**/*.sol"
+    mechanism: seigniorage_shares
+    family: seigniorage_shares  # report: seigniorage-shares algorithm
+    market:
+      peg_target: usd
+      llama_coin: coingecko:basis-cash
+      llama_start: 1614556800
+      llama_span: 200
+    incident:
+      date: "2021-03-01"
+      summary: "BAC traded persistently below peg; the bond mechanism never restored it"
+      loss_usd: null
+      source: "press only — treat as an illustrative case, not a quantified incident"
+
+  - name: empty-set-dollar
+    display: Empty Set Dollar (ESD)
+    tier: study
+    algorithmic: pure
+    language: solidity
+    repo: https://github.com/emptysetsquad/dollar
+    ref: master
+    license: Apache-2.0
+    paths:
+      - "protocol/contracts/**/*.sol"
+    mechanism: seigniorage_coupons
+    family: seigniorage_shares  # report: seigniorage-shares algorithm
+    market:
+      peg_target: usd
+      llama_coin: coingecko:empty-set-dollar
+      llama_start: 1609459200
+      llama_span: 200
+    incident:
+      date: "2021-01-01"
+      summary: "Coupons expired worthless, removing the incentive to fund contraction"
+      loss_usd: null
+      source: "press only"
+
+  - name: frax
+    display: Frax v1 (FRAX / FXS)
+    tier: study
+    algorithmic: partial
+    language: solidity
+    repo: https://github.com/FraxFinance/frax-solidity
+    ref: master
+    license: MIT
+    paths:
+      - "src/hardhat/contracts/Frax/**/*.sol"
+      - "contracts/Frax/**/*.sol"
+    mechanism: fractional_algorithmic
+    family: fractional_hybrid   # partially collateralised - NOT uncollateralised
+    market:
+      # The source table marks daily supply unavailable for this event:
+      # DefiLlama stablecoin id 6 exists but its series ends 2022-12-09, before
+      # the March 2023 depeg. Recorded as absent rather than pointing at a
+      # series that cannot cover the window.
+      peg_target: usd
+      llama_coin: coingecko:frax
+      llama_start: 1678492800
+      llama_span: 200
+    incident: null
+
+  - name: fei-protocol
+    display: Fei Protocol (FEI)
+    tier: control
+    algorithmic: none
+    language: solidity
+    repo: https://github.com/fei-protocol/fei-protocol-core
+    ref: develop
+    license: AGPL-3.0
+    paths:
+      - "contracts/**/*.sol"
+    mechanism: direct_incentives_pcv
+    family: pcv_backed
+    # A CONTROL, not part of the algorithmic study set. FEI is fully backed by
+    # exogenous collateral (Protocol Controlled Value), and the "direct
+    # incentives" mechanism that was genuinely algorithmic was abandoned in
+    # 2021. Note also that the incident below is a reentrancy bug in the Rari
+    # /Fuse pools — a DIFFERENT repository, and evidence about a code defect
+    # rather than about PCV-backing as a monetary mechanism. It earns its place
+    # by measuring false positives: V1/V2 firing on a collateral-backed
+    # protocol is a real error worth counting.
+    #
+    # Checked against the code rather than assumed, since DefiLlama classifies
+    # FEI as pegMechanism "algorithmic". The shipped mechanism is redemption
+    # against exogenous collateral: contracts/peg/ holds PegStabilityModule,
+    # FixedPricePSM, PriceBoundPSM, NonCustodialPSM and SimpleFeiDaiPSM. The
+    # direct-incentive HOOK does survive in contracts/fei/Fei.sol — the
+    # `incentiveContract` mapping and `_checkAndApplyIncentives()` fire on every
+    # transfer — but the only UniswapIncentive implementation in the collected
+    # tree is contracts/mock/MockUniswapIncentive.sol, and the sole non-mock
+    # setter is the governor-only setIncentiveContract in Fei.sol itself. Hook
+    # without implementation, so `none` stands.
+    market:
+      peg_target: usd
+      llama_coin: coingecko:fei-usd
+      llama_start: 1651190400
+      llama_span: 200
+      stablecoin_id: 9
+    incident:
+      date: "2022-04-30"
+      summary: "Reentrancy in Rari/Fuse pools"
+      loss_usd: 80000000
+      source: "https://halborn.com/explained-the-fei-protocol-hack-april-2022/"
+
+  - name: ampleforth
+    display: Ampleforth (AMPL)
+    tier: study
+    algorithmic: pure
+    language: solidity
+    repo: https://github.com/ampleforth/uFragments
+    ref: master
+    license: GPL-3.0
+    paths:
+      - "contracts/**/*.sol"
+    mechanism: rebase
+    family: rebase              # report: rebasing algorithm
+    market:
+      # peg_target `none`: AMPL targets the 2019 CPI-adjusted dollar and
+      # defends it by rebasing balances, not by holding price at $1.00. A $0.99
+      # threshold would measure the mechanism working as designed.
+      peg_target: none
+      llama_coin: coingecko:ampleforth
+      llama_start: 1609459200
+      llama_span: 200
+    incident: null
+
+  - name: yam-finance
+    display: YAM Finance v1 (YAM)
+    tier: study
+    algorithmic: pure
+    language: solidity
+    repo: https://github.com/yam-finance/yam-protocol
+    ref: master
+    license: unspecified   # no LICENSE file exists anywhere in this repo's
+                           # history; recorded honestly rather than assumed
+    paths:
+      - "contracts/token/*.sol"
+      - "contracts/rebaser/*.sol"
+    mechanism: rebase
+    family: rebase              # report: rebasing algorithm
+    # No pinning needed: unlike Beanstalk, this repository was never patched.
+    # The project migrated to YAM v2/v3 in separate repositories and abandoned
+    # this one on 2020-08-25, so master still carries the deployed defect —
+    # verified at contracts/token/YAM.sol:340.
+    # No market series exists for YAM v1 in any free source: the Binance
+    # archive has no YAMUSDT, DefiLlama returns nothing under coingecko:yam,
+    # :yam-2, :yam-v3 or the verified v1 contract address, and the failure
+    # was a governance freeze rather than a depeg, so a price threshold
+    # could not detect it even with data.
+    market: null
+    incident:
+      date: "2020-08-13"
+      summary: "A single missing .div(BASE) in rebase() inflated totalSupply on the first positive rebase, minting far more YAM to the reserve than intended and permanently locking governance quorum ~35 hours after launch"
+      loss_usd: 750000
+      source: "https://peckshield.medium.com/yam-incident-root-cause-analysis-f3fb2213af53"
+
+  # Beanstalk is carried TWICE, as a vulnerable/patched pair. Same protocol,
+  # same codebase, differing in the governance facet that was exploited. This
+  # is the project's only controlled A/B: the detector should flag V5 in the
+  # pinned pre-attack tree and NOT flag it in the post-remediation tree.
+  - name: beanstalk
+    display: Beanstalk (BEAN) — pre-attack
+    tier: study
+    algorithmic: pure
+    language: solidity
+    repo: https://github.com/BeanstalkFarms/Beanstalk
+    # PINNED to 2022-04-11, six days before the governance attack. This is a
+    # commit SHA, not a branch: corpus.clone() resolves it exactly and fails
+    # loudly rather than falling back to master, because master is patched and
+    # the V5 label below would otherwise point at code that no longer exists.
+    ref: e9f49910e287e7a7afaa6db8f536b7194728b0af
+    license: MIT
+    paths:
+      - "protocol/contracts/**/*.sol"
+    mechanism: credit_based_seigniorage
+    family: seigniorage_shares  # report: seigniorage-shares algorithm (credit variant)
+    market:
+      peg_target: usd
+      llama_coin: coingecko:bean
+      llama_start: 1650067200
+      llama_span: 200
+    incident:
+      date: "2022-04-17"
+      summary: "Flash-loan governance capture via emergencyCommit"
+      loss_usd: 181000000
+      source: "https://medium.com/immunefi/hack-analysis-beanstalk-governance-attack-april-2022-f42788fc821e"
+
+  - name: beanstalk-patched
+    display: Beanstalk (BEAN) — post-remediation
+    tier: control
+    algorithmic: pure
+    language: solidity
+    repo: https://github.com/BeanstalkFarms/Beanstalk
+    ref: master
+    license: MIT
+    paths:
+      - "protocol/contracts/**/*.sol"
+    mechanism: credit_based_seigniorage
+    family: seigniorage_shares
+    # The patched half of the vulnerable/patched pair: emergencyCommit was
+    # removed after 17 Apr 2022, so a V5 hit here is a false positive by
+    # construction. `algorithmic: pure` because the DESIGN is unchanged — only
+    # its role differs, which is exactly why the two axes are separate.
+    market:
+      # Same token as the pinned tree; the window is the post-replant period
+      # (16 Aug 2022), not the attack.
+      peg_target: usd
+      llama_coin: coingecko:bean
+      llama_start: 1660678200
+      llama_span: 200
+    incident: null
+
+  - name: iron-finance
+    display: Iron Finance (IRON / TITAN)
+    tier: study
+    algorithmic: partial
+    language: solidity
+    repo: https://github.com/IronFinance/iron-polygon-contracts
+    ref: main
+    license: unspecified
+    paths:
+      - "contracts/**/*.sol"
+    mechanism: fractional_algorithmic
+    family: fractional_hybrid   # partially collateralised - NOT uncollateralised
+    market:
+      peg_target: usd
+      llama_coin: coingecko:iron-stablecoin
+      llama_start: 1623628800
+      llama_span: 200
+      # The absorbing token, whose hyperinflation is the mechanism V1/V2 name.
+      absorbing_coin: coingecko:iron-titanium-token
+    incident:
+      date: "2021-06-16"
+      summary: "Bank run; TWAP-priced redemption below spot; TCR could move only 0.25%/hour"
+      loss_usd: 2000000000
+      source: "https://doi.org/10.17016/2380-7172.3121"
+
+  - name: neutrino
+    display: Neutrino (USDN)
+    tier: study
+    algorithmic: pure
+    language: ride
+    repo: https://github.com/waves-exchange/neutrino-contract
+    ref: master
+    license: MIT
+    paths:
+      - "script/*.ride"
+      - "script_eth/*.ride"
+    mechanism: dual_token_seigniorage
+    family: dual_token          # report: dual-token mechanism
+    market:
+      peg_target: usd
+      llama_coin: coingecko:neutrino
+      llama_start: 1648857600
+      llama_span: 300
+      stablecoin_id: 12
+    incident:
+      date: "2022-04-04"
+      summary: "USDN fell to ~$0.82 on endogenous WAVES backing"
+      loss_usd: null
+      source: "press"
+
+  - name: angle-protocol
+    display: Angle Protocol v1 (agEUR)
+    tier: study
+    algorithmic: partial
+    language: solidity
+    repo: https://github.com/AngleProtocol/angle-core
+    ref: main
+    license: GPL-3.0
+    paths:
+      - "contracts/stableMaster/**/*.sol"
+      - "contracts/perpetualManager/**/*.sol"
+      - "contracts/feeManager/**/*.sol"
+      - "contracts/agToken/**/*.sol"
+      - "contracts/collateralSettler/**/*.sol"
+    mechanism: hedged_agent_fractional_reserve
+    family: fractional_hybrid   # partially collateralised; StableMaster sets fees
+                                 # algorithmically off the collateral ratio, HAs
+                                 # (perpetualManager) hedge/leverage the reserve
+    market:
+      # peg_target `eur`: agEUR tracks the euro, so a $0.99 threshold would
+      # measure EUR/USD drift rather than a depeg. The source table records that
+      # its euro peg was not lost during the Euler incident.
+      peg_target: eur
+      llama_coin: coingecko:ageur
+      llama_start: 1678579200
+      llama_span: 200
+    incident:
+      date: "2023-03-13"
+      summary: "~$17.6M of Angle's USDC reserves were frozen when a third-party lending market (Euler Finance) it deployed idle collateral into was exploited; a counterparty/yield-integration failure, not a defect in Angle's own contracts"
+      loss_usd: 17600000
+      source: "https://www.angle.money/blog/announcements/euler-hack-reflection-learning-adapting-and-strengthening-angle-protocol"
+
+  - name: reflexer-rai
+    display: Reflexer RAI
+    tier: control
+    algorithmic: partial
+    language: solidity
+    repo: https://github.com/reflexer-labs/geb
+    ref: master
+    license: AGPL-3.0
+    paths:
+      - "src/**/*.sol"
+    mechanism: pid_controlled_cdp
+    family: cdp
+    # `algorithmic: partial` on purpose. RAI's PID controller continuously
+    # adjusts the redemption rate, which IS an algorithmic peg mechanism — it
+    # is more algorithmic than Fei. It is a control because it is
+    # overcollateralised and its peg held, and that combination is itself a
+    # finding: what breaks these designs is the absorbing token, not the
+    # algorithm.
+    market:
+      # peg_target `none`: RAI has no fixed peg. Its redemption price floats
+      # under PID control and sat near $3.02 in the observation window, so
+      # deviation from $1.00 is undefined for it.
+      peg_target: none
+      llama_coin: coingecko:rai
+      llama_start: 1652054400
+      llama_span: 200
+    incident: null
+
+  - name: liquity
+    display: Liquity v1 (LUSD)
+    tier: control
+    algorithmic: none
+    language: solidity
+    repo: https://github.com/liquity/dev
+    ref: main
+    license: unspecified
+    paths:
+      - "packages/contracts/contracts/*.sol"
+    mechanism: overcollateralised_cdp
+    family: cdp
+    market:
+      peg_target: usd
+      llama_coin: coingecko:liquity-usd
+      llama_start: 1652054400
+      llama_span: 200
+      stablecoin_id: 8
+    incident: null
+
+  - name: mento
+    display: Mento (cUSD, renamed USDm)
+    tier: control
+    # CORRECTED from `none`. This was classified by reputation ("reserve-backed,
+    # therefore collateral-backed") rather than by reading the code, and the
+    # code says otherwise on three counts:
+    #
+    #   1. Stable tokens are MINTED and BURNED, not paid from inventory.
+    #      contracts/swap/Broker.sol, transferOut():
+    #        if (reserve.isStableAsset(token)) IERC20(token).safeMint(to, amount);
+    #      and symmetrically safeBurn() in transferIn(). Supply therefore
+    #      expands and contracts as a function of swap flow — a supply-based
+    #      stabilisation mechanism, not mere collateral redemption.
+    #
+    #   2. Price comes from an oracle-anchored virtual AMM.
+    #      contracts/swap/BiPoolManager.sol, getUpdatedBuckets():
+    #        bucket0 = exchange.config.stablePoolResetSize;
+    #        bucket1 = rateDenominator * bucket0 / rateNumerator;
+    #      Virtual buckets are periodically re-anchored to an oracle rate and
+    #      then traded along ConstantProduct/ConstantSumPricingModule. That is
+    #      the "algorithmic ratio/fee controller" of the `partial` definition.
+    #
+    #   3. An on-chain circuit breaker gates every swap:
+    #      breakerBox.getRateFeedTradingMode(...) == TRADING_MODE_BIDIRECTIONAL.
+    #
+    # Reserve.sol does hold real exogenous collateral with per-asset daily
+    # spending limits and a tobin tax below a target reserve ratio — hence
+    # `partial`, not `pure`. DefiLlama independently classifies it
+    # pegMechanism: "algorithmic" (stablecoins.llama.fi/stablecoin/24).
+    #
+    # Honest caveat on the second half of the `partial` definition ("endogenous
+    # share token absorbing redemptions"): Mento's reserve held CELO, the
+    # native token of the same chain, alongside BTC/ETH/DAI. The endogeneity is
+    # ecosystem-level, not a dedicated share token like TITAN or FXS. The
+    # algorithmic-controller criterion is met outright; this one only partly.
+    #
+    # No metric moves: `tier: control` takes precedence in by_layer(), so Mento
+    # stays in the control bucket. What changes is Figure 2 and Table 2, which
+    # previously labelled it "collateral-backed" — a claim Broker.sol refutes.
+    algorithmic: partial
+    language: solidity
+    repo: https://github.com/mento-protocol/mento-core
+    ref: develop
+    license: unspecified
+    paths:
+      - "contracts/**/*.sol"
+    mechanism: reserve_backed_amm
+    family: reserve_amm
+    market:
+      peg_target: usd
+      llama_coin: coingecko:celo-dollar
+      llama_start: 1652054400
+      llama_span: 200
+      stablecoin_id: 24
+    incident: null
+
+  - name: reserve-protocol
+    display: Reserve Protocol (RToken / eUSD)
+    tier: control
+    algorithmic: none
+    language: solidity
+    repo: https://github.com/reserve-protocol/protocol
+    ref: master
+    license: "Blue Oak 1.0.0"
+    paths:
+      - "contracts/p1/**/*.sol"
+      - "contracts/mixins/**/*.sol"
+    mechanism: basket_collateralised_insured
+    family: basket   # overcollateralised basket + RSR insurance backstop;
+                              # no algorithmic seigniorage token, no peg failure to date
+    market:
+      peg_target: usd
+      llama_coin: coingecko:electronic-usd
+      llama_start: 1678492800
+      llama_span: 200
+    incident: null
+
+# Benchmarks used only for regression / comparability, not for the headline result.
+benchmarks:
+  - name: smartbugs-curated
+    repo: https://github.com/smartbugs/smartbugs-curated
+    ref: main
+    license: Apache-2.0
+    note: "143 contracts, 208 tagged vulnerabilities (DASP10). Syntactic bugs only."
+  - name: web3bugs
+    repo: https://github.com/ZhangZhuoSJTU/Web3Bugs
+    ref: main
+    license: MIT
+    note: "516 real vulnerabilities; contains an explicit Stablecoins category."
+  - name: defihacklabs
+    repo: https://github.com/SunWeb3Sec/DeFiHackLabs
+    ref: main
+    license: MIT
+    note: "~691 reproducible DeFi incident PoCs (Foundry)."
