@@ -3,7 +3,7 @@ LLM-based vulnerability detection for algorithmic stablecoins
 
 Function-level vulnerability detection across 16 algorithmic-stablecoin protocols,
 combining a knowledge-base-driven LLM auditor with an adversarial critic and a
-mechanical static check, plus an independent behavioural track that labels real
+static check, plus an independent behavioural track that labels real
 depeg episodes from market data.
 
 ## The pipeline
@@ -22,7 +22,7 @@ vulnerable).
 which classes are worth testing against each slice, producing (slice, class) pairs.
 Each pair is audited twice by the LLM at different temperatures, then reviewed by an
 adversarial critic whose default position is that the finding is wrong, and
-independently checked by a mechanical rule engine. A finding is reported only if the
+independently checked by a rule engine. A finding is reported only if the
 critic accepts it **and** the static check passes.
 
 In parallel, the **behavioural** stage fetches price and supply series for the 12
