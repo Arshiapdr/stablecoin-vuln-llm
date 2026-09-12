@@ -87,7 +87,7 @@ identifier-normalised, few-shot).
 **Step 10 — Report.** `asv prevent` maps findings to mitigations and `asv report`
 renders every figure and table into `results/`.
 
-## Run it
+## How to run
 
 ```bash
 python -m pip install -e ".[dev]"
