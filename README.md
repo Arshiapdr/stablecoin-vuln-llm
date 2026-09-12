@@ -113,6 +113,6 @@ backend before committing to a long run.
 - `docs/FP_TRIAGE.md` — adjudication of the false positives
 - `docs/RUN_WITH_A_REAL_LLM.md` — provider setup
 
-## Licence
+## License
 
 MIT — see `LICENSE`.
