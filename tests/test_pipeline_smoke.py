@@ -79,6 +79,16 @@ def test_detect_aborts_when_no_call_ever_succeeds(monkeypatch, tmp_path):
     from asv.config import Config
 
     cfg = Config.load()
+    # Synthetic slices, never the real corpus. `data/` is gitignored, so in CI
+    # `slices.json` does not exist and depending on it made this test fail with
+    # FileNotFoundError instead of exercising the fail-fast guard it is for.
+    from asv.slicing import Slice
+    fake = [Slice(id=f"s{i}", protocol="p", tier="study", language="solidity",
+                  file="a/B.sol", contract="B", function=f"f{i}",
+                  signature=f"f{i}()", start_line=1, end_line=3,
+                  code="function f() public { _mint(msg.sender, 1); }")
+            for i in range(20)]
+    monkeypatch.setattr(detect, "select_slices", lambda *a, **k: fake)
     monkeypatch.setattr(
         llm.Router, "complete",
         lambda self, *a, **k: (setattr(self, "errors", self.errors + 1),
