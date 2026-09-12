@@ -53,7 +53,7 @@ code and 826 are benchmark contracts.
 
 **Step 3 — Define the vulnerability classes.** `knowledge/vulnerabilities.yaml`
 holds 10 classes across four layers (economic, governance, oracle, implementation).
-Each carries a scenario, a falsifiable property, retrieval terms, and mechanical
+Each carries a scenario, a falsifiable property, retrieval terms, and
 static checks covering Solidity, Go and Ride.
 
 **Step 4 — Sample the slices to audit.** Auditing the full corpus is ~24,500 LLM
@@ -72,7 +72,7 @@ and 0.7. Nothing in the prompt reveals the ground truth or the static verdict.
 
 **Step 7 — Review, confirm, decide.** Surviving claims go to an adversarial critic
 using one of two rubrics chosen by the class's layer. A pure-Python rule engine
-checks the class's mechanical conditions independently. A finding is reported only
+checks the class's conditions independently. A finding is reported only
 if both agree; self-contradictory critic replies are recorded as abstentions rather
 than resolved. Output: `results/findings.json`.
 
