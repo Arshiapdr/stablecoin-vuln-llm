@@ -6,9 +6,9 @@ combining a knowledge-base-driven LLM auditor with an adversarial critic and a
 mechanical static check, plus an independent behavioural track that labels real
 depeg episodes from market data.
 
-![Pipeline stages](docs/figures/pipeline.png)
-
 ## The pipeline
+
+![Pipeline stages](docs/figures/pipeline.png)
 
 The project runs as seven numbered stages, each a single `asv` command writing a
 file the next stage reads. **Corpus** clones 16 protocol repositories pinned by
@@ -33,6 +33,8 @@ ablations. **Prevention** maps surviving findings to mitigations.
 
 The two tracks never mix: detection metrics come from findings and ground truth
 alone, and the behavioural results enter only the report.
+
+## The architecture
 
 ![Implementation architecture](docs/figures/architecture.png)
 
