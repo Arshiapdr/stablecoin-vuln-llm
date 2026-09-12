@@ -106,13 +106,6 @@ asv prevent && asv report
 `asv --help` lists every stage. `scripts/check_provider.py` verifies a model
 backend before committing to a long run.
 
-## Documentation
-
-- `docs/METHOD.md` — method, taxonomy and accepted limitations
-- `docs/RUN_ENVIRONMENT.md` — pinned model, engine build and hardware
-- `docs/FP_TRIAGE.md` — adjudication of the false positives
-- `docs/RUN_WITH_A_REAL_LLM.md` — provider setup
-
 ## License
 
 MIT — see `LICENSE`.
