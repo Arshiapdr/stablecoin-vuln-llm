@@ -105,9 +105,6 @@ asv baseline --kind static && asv evaluate && asv compare
 asv prevent && asv report
 ```
 
-`asv --help` lists every stage. `scripts/check_provider.py` verifies a model
-backend before committing to a long run.
-
 ## License
 
 MIT — see `LICENSE`.
